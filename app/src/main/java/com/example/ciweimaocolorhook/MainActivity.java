@@ -1,0 +1,311 @@
+package com.example.ciweimaocolorhook;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.SeekBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+/**
+ * 调色界面
+ * 使用MODE_WORLD_READABLE保存配置，LSPosed会自动使其全局可读
+ */
+public class MainActivity extends Activity {
+    
+    private static final String PREF_NAME = "color_config";
+    
+    private static final int[] BG_COLORS = {0xFF000000, 0xFF1A1A1A, 0xFF0D1B2A};
+    private static final String[] BG_NAMES = {"黑", "深灰", "深蓝"};
+    private static final int[] TEXT_COLORS = {0xFFFFFFFF, 0xFFE0E0E0, 0xFFF5F5DC};
+    private static final String[] TEXT_NAMES = {"白", "灰白", "米黄"};
+    
+    private int bgColor = 0xFF000000;
+    private int textColor = 0xFFFFFFFF;
+    
+    private View bgPreview;
+    private View textPreview;
+    private TextView bgHex;
+    private TextView textHex;
+    private SeekBar seekR;
+    private SeekBar seekG;
+    private SeekBar seekB;
+    private boolean editingBg = true;
+    
+    private SharedPreferences prefs;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        // 使用MODE_WORLD_READABLE，LSPosed会自动处理
+        try {
+            prefs = getSharedPreferences(PREF_NAME, Context.MODE_WORLD_READABLE);
+        } catch (SecurityException e) {
+            // 如果失败，使用普通模式
+            prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        }
+        
+        // 加载已保存的配置
+        String savedBg = prefs.getString("bg_color", "000000");
+        String savedText = prefs.getString("text_color", "FFFFFF");
+        if (savedBg.matches("[0-9A-Fa-f]{6}")) {
+            bgColor = 0xFF000000 | Integer.parseInt(savedBg, 16);
+        }
+        if (savedText.matches("[0-9A-Fa-f]{6}")) {
+            textColor = 0xFF000000 | Integer.parseInt(savedText, 16);
+        }
+        
+        setContentView(createUI());
+    }
+    
+    private LinearLayout createUI() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(40, 40, 40, 40);
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        
+        TextView title = new TextView(this);
+        title.setText("刺猬猫夜间模式调色");
+        title.setTextSize(20);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, 0, 0, 30);
+        root.addView(title);
+        
+        // 背景色
+        TextView bgTitle = new TextView(this);
+        bgTitle.setText("背景颜色");
+        bgTitle.setTextSize(16);
+        bgTitle.setPadding(0, 16, 0, 8);
+        root.addView(bgTitle);
+        
+        bgPreview = new View(this);
+        bgPreview.setBackgroundColor(bgColor);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(200, 60);
+        pp.gravity = Gravity.CENTER;
+        bgPreview.setLayoutParams(pp);
+        root.addView(bgPreview);
+        
+        bgHex = new TextView(this);
+        bgHex.setText("#" + hex(bgColor));
+        bgHex.setGravity(Gravity.CENTER);
+        bgHex.setPadding(0, 8, 0, 8);
+        root.addView(bgHex);
+        
+        LinearLayout bgPresets = new LinearLayout(this);
+        bgPresets.setGravity(Gravity.CENTER);
+        for (int i = 0; i < BG_COLORS.length; i++) {
+            final int idx = i;
+            Button btn = new Button(this);
+            btn.setText(BG_NAMES[i]);
+            btn.setTextSize(11);
+            btn.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    bgColor = BG_COLORS[idx];
+                    updateDisplay();
+                }
+            });
+            bgPresets.addView(btn);
+        }
+        root.addView(bgPresets);
+        
+        // 分隔线
+        addDivider(root);
+        
+        // 文字色
+        TextView textTitle = new TextView(this);
+        textTitle.setText("文字颜色");
+        textTitle.setTextSize(16);
+        textTitle.setPadding(0, 16, 0, 8);
+        root.addView(textTitle);
+        
+        textPreview = new View(this);
+        textPreview.setBackgroundColor(textColor);
+        textPreview.setLayoutParams(pp);
+        root.addView(textPreview);
+        
+        textHex = new TextView(this);
+        textHex.setText("#" + hex(textColor));
+        textHex.setGravity(Gravity.CENTER);
+        textHex.setPadding(0, 8, 0, 8);
+        root.addView(textHex);
+        
+        LinearLayout textPresets = new LinearLayout(this);
+        textPresets.setGravity(Gravity.CENTER);
+        for (int i = 0; i < TEXT_COLORS.length; i++) {
+            final int idx = i;
+            Button btn = new Button(this);
+            btn.setText(TEXT_NAMES[i]);
+            btn.setTextSize(11);
+            btn.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    textColor = TEXT_COLORS[idx];
+                    updateDisplay();
+                }
+            });
+            textPresets.addView(btn);
+        }
+        root.addView(textPresets);
+        
+        // 分隔线
+        addDivider(root);
+        
+        // RGB滑块
+        TextView rgbLabel = new TextView(this);
+        rgbLabel.setText("RGB调色 (先点下方选择编辑目标)");
+        rgbLabel.setPadding(0, 16, 0, 8);
+        root.addView(rgbLabel);
+        
+        seekR = new SeekBar(this);
+        seekG = new SeekBar(this);
+        seekB = new SeekBar(this);
+        seekR.setMax(255);
+        seekG.setMax(255);
+        seekB.setMax(255);
+        
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(0, -2, 1);
+        
+        LinearLayout rRow = new LinearLayout(this);
+        TextView rLabel = new TextView(this);
+        rLabel.setText("R ");
+        rLabel.setTextColor(0xFFFF0000);
+        rRow.addView(rLabel);
+        seekR.setLayoutParams(sp);
+        rRow.addView(seekR);
+        root.addView(rRow);
+        
+        LinearLayout gRow = new LinearLayout(this);
+        TextView gLabel = new TextView(this);
+        gLabel.setText("G ");
+        gLabel.setTextColor(0xFF00AA00);
+        gRow.addView(gLabel);
+        seekG.setLayoutParams(sp);
+        gRow.addView(seekG);
+        root.addView(gRow);
+        
+        LinearLayout bRow = new LinearLayout(this);
+        TextView bLabel = new TextView(this);
+        bLabel.setText("B ");
+        bLabel.setTextColor(0xFF0000FF);
+        bRow.addView(bLabel);
+        seekB.setLayoutParams(sp);
+        bRow.addView(seekB);
+        root.addView(bRow);
+        
+        SeekBar.OnSeekBarChangeListener sl = new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar bar, int val, boolean user) {
+                if (user) {
+                    int c = 0xFF000000 | (seekR.getProgress() << 16) | (seekG.getProgress() << 8) | seekB.getProgress();
+                    if (editingBg) bgColor = c; else textColor = c;
+                    updateDisplay();
+                }
+            }
+            public void onStartTrackingTouch(SeekBar bar) {}
+            public void onStopTrackingTouch(SeekBar bar) {}
+        };
+        seekR.setOnSeekBarChangeListener(sl);
+        seekG.setOnSeekBarChangeListener(sl);
+        seekB.setOnSeekBarChangeListener(sl);
+        
+        // 编辑目标
+        LinearLayout editBtns = new LinearLayout(this);
+        editBtns.setGravity(Gravity.CENTER);
+        Button editBgBtn = new Button(this);
+        editBgBtn.setText("编辑背景");
+        editBgBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                editingBg = true;
+                setSeekBar(bgColor);
+            }
+        });
+        editBtns.addView(editBgBtn);
+        Button editTextBtn = new Button(this);
+        editTextBtn.setText("编辑文字");
+        editTextBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                editingBg = false;
+                setSeekBar(textColor);
+            }
+        });
+        editBtns.addView(editTextBtn);
+        root.addView(editBtns);
+        
+        // 分隔线
+        addDivider(root);
+        
+        // 保存按钮
+        LinearLayout bottomBtns = new LinearLayout(this);
+        bottomBtns.setGravity(Gravity.CENTER);
+        Button saveBtn = new Button(this);
+        saveBtn.setText("保存设置");
+        saveBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                saveConfig();
+            }
+        });
+        bottomBtns.addView(saveBtn);
+        Button resetBtn = new Button(this);
+        resetBtn.setText("恢复默认");
+        resetBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                bgColor = 0xFF000000;
+                textColor = 0xFFFFFFFF;
+                updateDisplay();
+            }
+        });
+        bottomBtns.addView(resetBtn);
+        root.addView(bottomBtns);
+        
+        TextView hint = new TextView(this);
+        hint.setText("\n保存后强制停止刺猬猫再打开生效");
+        hint.setTextSize(12);
+        hint.setGravity(Gravity.CENTER);
+        root.addView(hint);
+        
+        return root;
+    }
+    
+    private void addDivider(LinearLayout root) {
+        View div = new View(this);
+        div.setBackgroundColor(0xFFCCCCCC);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 1);
+        lp.setMargins(0, 24, 0, 16);
+        div.setLayoutParams(lp);
+        root.addView(div);
+    }
+    
+    private void setSeekBar(int color) {
+        seekR.setProgress((color >> 16) & 0xFF);
+        seekG.setProgress((color >> 8) & 0xFF);
+        seekB.setProgress(color & 0xFF);
+    }
+    
+    private void updateDisplay() {
+        bgPreview.setBackgroundColor(bgColor);
+        textPreview.setBackgroundColor(textColor);
+        bgHex.setText("#" + hex(bgColor));
+        textHex.setText("#" + hex(textColor));
+    }
+    
+    private String hex(int c) {
+        return String.format("%02X%02X%02X", (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+    }
+    
+    private void saveConfig() {
+        String bg = hex(bgColor);
+        String txt = hex(textColor);
+        
+        prefs.edit()
+            .putString("bg_color", bg)
+            .putString("text_color", txt)
+            .apply();
+        
+        Toast.makeText(this, "已保存: 背景#" + bg + " 文字#" + txt + "\n请重启刺猬猫", Toast.LENGTH_LONG).show();
+    }
+}
