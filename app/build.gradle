@@ -3,15 +3,15 @@ plugins {
 }
 
 android {
-    namespace 'com.example.ciweimaocolorhook'
+    namespace 'io.github.lostmymind.cwm.nightplus'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.ciweimaocolorhook"
+        applicationId "io.github.lostmymind.cwm.nightplus"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 115
+        versionName "1.1.5"
     }
 
     buildTypes {
@@ -27,6 +27,5 @@ android {
 }
 
 dependencies {
-    // Xposed API - compileOnly ensures it won't be packaged into APK
     compileOnly 'de.robv.android.xposed:api:82'
 }
