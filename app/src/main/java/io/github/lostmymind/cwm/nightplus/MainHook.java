@@ -3,161 +3,102 @@ package io.github.lostmymind.cwm.nightplus;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.graphics.Color;
+import android.util.SparseIntArray;
 
 import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.Set;
 
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 import io.github.libxposed.api.XposedModuleInterface;
 
 /**
- * API 101 MainHook
- * Hook Resources.getColor() to replace night mode colors
+ * API 101 MainHook - Optimized
  */
 public class MainHook extends XposedModule {
 
-    private static final String TARGET_PACKAGE = "com.kuangxiangciweimao.novel";
-    private static final String PREF_NAME = "color_config";
+    private static final String TARGET = "com.kuangxiangciweimao.novel";
+    private static final String PREF = "color_config";
     
     private static int bgColor = Color.BLACK;
     private static int bgColorBright = Color.BLACK;
     private static int textColor = Color.WHITE;
     
-    private static final String[] BG_COLOR_NAMES = {
-        "color_2c2c2c",
-        "color_bg_1_night"
-    };
+    private static final Set<Integer> bgIds = new HashSet<>();
+    private static final Set<Integer> bgBrightIds = new HashSet<>();
+    private static final Set<Integer> textIds = new HashSet<>();
+    private static final SparseIntArray cache = new SparseIntArray(32);
+    private static boolean built = false;
     
-    private static final String[] BG_COLOR_BRIGHT_NAMES = {
-        "color_bg_catalog_night",
-        "color_bg_main_night",
-        "deepDark",
-        "edit_text_default_color",
-        "color_title_bg1_night",
-        "daibi_night",
-        "color_bg_2_night",
-        "bg_msg_night",
-        "text_btn_item_night",
-        "ksad_text_black_222",
-        "ksad_splash_endcard_name_color",
-        "text_222222"
+    private static final String[] BG_NAMES = {"color_2c2c2c", "color_bg_1_night"};
+    private static final String[] BG_BRIGHT_NAMES = {
+        "color_bg_catalog_night", "color_bg_main_night", "deepDark",
+        "edit_text_default_color", "color_title_bg1_night", "daibi_night",
+        "color_bg_2_night", "bg_msg_night", "text_btn_item_night",
+        "ksad_text_black_222", "ksad_splash_endcard_name_color", "text_222222"
     };
-    
-    private static final String[] TEXT_COLOR_NAMES = {
-        "readpageText_night",
-        "color_949494"
-    };
+    private static final String[] TEXT_NAMES = {"readpageText_night", "color_949494"};
 
     @Override
     public void onPackageLoaded(XposedModuleInterface.PackageLoadedParam param) {
-        if (!TARGET_PACKAGE.equals(param.getPackageName())) {
-            return;
-        }
-        
-        log(android.util.Log.INFO, "CWMColorHook", "onPackageLoaded: " + param.getPackageName());
-        
+        if (!TARGET.equals(param.getPackageName())) return;
         loadConfig();
-        
         try {
-            Method getColor1 = Resources.class.getDeclaredMethod("getColor", int.class);
-            hook(getColor1).intercept(new GetColorHooker());
-            
-            Method getColor2 = Resources.class.getDeclaredMethod("getColor", int.class, Resources.Theme.class);
-            hook(getColor2).intercept(new GetColorThemeHooker());
-            
-            log(android.util.Log.INFO, "CWMColorHook", "Hook getColor success");
-        } catch (Throwable t) {
-            log(android.util.Log.ERROR, "CWMColorHook", "Hook failed: " + t.getMessage());
-        }
+            Method m1 = Resources.class.getDeclaredMethod("getColor", int.class);
+            hook(m1).intercept(Hooker.INSTANCE);
+            Method m2 = Resources.class.getDeclaredMethod("getColor", int.class, Resources.Theme.class);
+            hook(m2).intercept(Hooker.INSTANCE);
+        } catch (Throwable ignored) {}
     }
     
     private void loadConfig() {
         try {
-            SharedPreferences prefs = getRemotePreferences(PREF_NAME);
-            String bgHex = prefs.getString("bg_color", null);
-            String textHex = prefs.getString("text_color", null);
-            
-            if (bgHex != null && bgHex.matches("[0-9A-Fa-f]{6}")) {
-                bgColor = Color.parseColor("#" + bgHex);
-                int r = Math.min(255, ((bgColor >> 16) & 0xFF) + 0x0A);
-                int g = Math.min(255, ((bgColor >> 8) & 0xFF) + 0x0A);
-                int b = Math.min(255, (bgColor & 0xFF) + 0x0A);
+            SharedPreferences p = getRemotePreferences(PREF);
+            String bg = p.getString("bg_color", null);
+            String tx = p.getString("text_color", null);
+            if (bg != null && bg.matches("[0-9A-Fa-f]{6}")) {
+                bgColor = Color.parseColor("#" + bg);
+                int r = Math.min(255, ((bgColor >> 16) & 0xFF) + 10);
+                int g = Math.min(255, ((bgColor >> 8) & 0xFF) + 10);
+                int b = Math.min(255, (bgColor & 0xFF) + 10);
                 bgColorBright = 0xFF000000 | (r << 16) | (g << 8) | b;
             }
-            if (textHex != null && textHex.matches("[0-9A-Fa-f]{6}")) {
-                textColor = Color.parseColor("#" + textHex);
-            }
-            
-            log(android.util.Log.INFO, "CWMColorHook", "Config loaded: bg=#" + bgHex + ", bgBright=#" + Integer.toHexString(bgColorBright) + ", text=#" + textHex);
-        } catch (Throwable t) {
-            log(android.util.Log.ERROR, "CWMColorHook", "Load config failed: " + t.getMessage());
-        }
+            if (tx != null && tx.matches("[0-9A-Fa-f]{6}")) textColor = Color.parseColor("#" + tx);
+            cache.clear();
+        } catch (Throwable ignored) {}
     }
     
-    private static boolean isTargetColor(Resources res, int id, String[] colorNames) {
+    private static void buildIds(Resources res) {
+        if (built) return;
         try {
-            String name = res.getResourceName(id);
-            for (String target : colorNames) {
-                if (name != null && name.contains(target)) {
-                    return true;
-                }
-            }
-        } catch (Throwable t) {
-        }
-        return false;
+            for (String n : BG_NAMES) { int id = res.getIdentifier(n, "color", TARGET); if (id != 0) bgIds.add(id); }
+            for (String n : BG_BRIGHT_NAMES) { int id = res.getIdentifier(n, "color", TARGET); if (id != 0) bgBrightIds.add(id); }
+            for (String n : TEXT_NAMES) { int id = res.getIdentifier(n, "color", TARGET); if (id != 0) textIds.add(id); }
+            built = true;
+        } catch (Throwable ignored) {}
     }
     
-    private static void logColorMatch(Resources res, int id, String matchedName, int color) {
-        try {
-            String name = res.getResourceName(id);
-            android.util.Log.i("CWMColorHook", "Match: " + name + " -> " + matchedName + " = #" + Integer.toHexString(color));
-        } catch (Throwable t) {
-        }
-    }
-    
-    public static class GetColorHooker implements XposedInterface.Hooker {
+    public static class Hooker implements XposedInterface.Hooker {
+        static final Hooker INSTANCE = new Hooker();
+        
         @Override
         public Object intercept(XposedInterface.Chain chain) throws Throwable {
             Resources res = (Resources) chain.getThisObject();
             int id = (int) chain.getArg(0);
             
-            if (isTargetColor(res, id, BG_COLOR_NAMES)) {
-                logColorMatch(res, id, "BG", bgColor);
-                return bgColor;
-            }
-            if (isTargetColor(res, id, BG_COLOR_BRIGHT_NAMES)) {
-                logColorMatch(res, id, "BG_BRIGHT", bgColorBright);
-                return bgColorBright;
-            }
-            if (isTargetColor(res, id, TEXT_COLOR_NAMES)) {
-                logColorMatch(res, id, "TEXT", textColor);
-                return textColor;
-            }
+            buildIds(res);
             
-            return chain.proceed();
-        }
-    }
-    
-    public static class GetColorThemeHooker implements XposedInterface.Hooker {
-        @Override
-        public Object intercept(XposedInterface.Chain chain) throws Throwable {
-            Resources res = (Resources) chain.getThisObject();
-            int id = (int) chain.getArg(0);
+            int c = cache.get(id, -1);
+            if (c != -1) return c;
             
-            if (isTargetColor(res, id, BG_COLOR_NAMES)) {
-                logColorMatch(res, id, "BG", bgColor);
-                return bgColor;
-            }
-            if (isTargetColor(res, id, BG_COLOR_BRIGHT_NAMES)) {
-                logColorMatch(res, id, "BG_BRIGHT", bgColorBright);
-                return bgColorBright;
-            }
-            if (isTargetColor(res, id, TEXT_COLOR_NAMES)) {
-                logColorMatch(res, id, "TEXT", textColor);
-                return textColor;
-            }
+            if (bgIds.contains(id)) c = bgColor;
+            else if (bgBrightIds.contains(id)) c = bgColorBright;
+            else if (textIds.contains(id)) c = textColor;
+            else return chain.proceed();
             
-            return chain.proceed();
+            cache.put(id, c);
+            return c;
         }
     }
 }
